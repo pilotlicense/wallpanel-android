@@ -22,7 +22,10 @@ apply plugin: 'kotlin-kapt'
 def versionMajor = 0
 def versionMinor = 9
 def versionPatch = 5
-def versionBuild = 9 // bump for dog food builds, public betas, etc.
+def versionBuild = 10 // bump for dog food builds, public betas, etc.
+
+def releaseSigning = new Properties()
+project.rootProject.file('local.properties').withInputStream { releaseSigning.load(it) }
 
 def CODE() {
     Properties properties = new Properties()
@@ -80,12 +83,24 @@ android {
         vectorDrawables.useSupportLibrary = true
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
+    signingConfigs {
+        // Only defined when local.properties has the release* keys (see GECKOVIEW.md)
+        if (releaseSigning.getProperty("releaseStoreFile")) {
+            release {
+                storeFile file(releaseSigning.getProperty("releaseStoreFile"))
+                storePassword releaseSigning.getProperty("releaseStorePassword")
+                keyAlias releaseSigning.getProperty("releaseKeyAlias")
+                keyPassword releaseSigning.getProperty("releaseKeyPassword")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            // Local sideload build: reuse the debug key so it updates the installed app in place
-            signingConfig signingConfigs.debug
+            // Sign with the private release key when configured; otherwise fall back to the
+            // debug key so anyone can still build the fork from source
+            signingConfig signingConfigs.findByName("release") ?: signingConfigs.debug
         }
     }
 

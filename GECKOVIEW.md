@@ -54,9 +54,30 @@ adb install -r WallPanelApp/build/outputs/apk/prod/release/WallPanelApp-prod-rel
 Don't install `prodDebug` on a real panel. In debug builds, `BrowserActivityNative`
 overwrites the saved dashboard URL, MQTT login and settings code on every launch.
 
-Release builds are signed with the local debug key (`~/.android/debug.keystore`) so they
-update the installed app in place and keep its settings. If that key is lost, you have to
-uninstall the app and set it up again.
+## Signing
+
+Release builds are signed with a private release key when `local.properties` has these
+keys (the keystore itself must stay outside the repo and is never committed):
+
+```
+releaseStoreFile=/path/to/wallpanel-release.keystore
+releaseStorePassword=...
+releaseKeyAlias=wallpanel-gecko
+releaseKeyPassword=...
+```
+
+Create one with:
+
+```sh
+keytool -genkeypair -keystore ~/.android/wallpanel-release.keystore -storetype PKCS12 \
+  -alias wallpanel-gecko -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Without those keys the build falls back to the Android debug key, so anyone can still build
+from source. A device only updates in place when the new APK is signed with the same key as
+the installed one, so **back up the release keystore and its password**. If they are lost,
+users have to uninstall the app and set it up again. Switching from a debug-signed build to a
+release-signed one needs the same uninstall and reinstall, once.
 
 ## Updating the engine
 
