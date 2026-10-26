@@ -1,5 +1,14 @@
-# WallPanel
+# WallPanel (GeckoView / Firefox engine fork)
 
+> **This is a fork of [thanksmister/wallpanel-android](https://github.com/thanksmister/wallpanel-android)
+> that renders dashboards with [GeckoView](https://mozilla.github.io/geckoview/), Mozilla's
+> embeddable Firefox engine, instead of the Android system WebView.** It is meant for devices
+> whose WebView can't be updated, such as Fire OS 7 tablets stuck on Chromium 84. It installs as
+> `com.thanksmister.iot.wallpanel.gecko`, alongside the stock app. See [GECKOVIEW.md](GECKOVIEW.md)
+> for what changed, known limitations and build instructions. The `geckoview` branch holds this work.
+>
+> The rest of this README is the upstream project's, and the Google Play and Amazon links below
+> are for the original WebView-based app, not this fork.
 
 WallPanel is an Android application for Web Based Dashboards and Home Automation Platforms. You can either side load the application to your Android device from the [release section](https://github.com/thecowan/wallpanel-android/releases), install the application from  [Google Play](https://play.google.com/store/apps/details?id=com.thanksmister.iot.wallpanel) or get WallPanel from the [Amazon Appstore](https://www.amazon.com/dp/B08S8XZ7LN/). 
 
