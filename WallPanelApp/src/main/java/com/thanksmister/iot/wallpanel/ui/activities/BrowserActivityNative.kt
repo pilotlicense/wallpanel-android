@@ -16,51 +16,70 @@
 
 package com.thanksmister.iot.wallpanel.ui.activities
 
-import android.Manifest
 import android.annotation.SuppressLint
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.http.SslError
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
-import android.view.*
-import android.webkit.*
-import android.widget.Button
+import android.os.Looper
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.widget.ProgressBar
 import android.widget.Toast
-import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleObserver
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.snackbar.Snackbar
 import com.thanksmister.iot.wallpanel.BuildConfig
 import com.thanksmister.iot.wallpanel.R
 import com.thanksmister.iot.wallpanel.network.ConnectionLiveData
 import com.thanksmister.iot.wallpanel.ui.fragments.CodeBottomSheetFragment
-import kotlinx.android.synthetic.main.activity_browser.*
+import org.json.JSONObject
+import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.GeckoRuntime
+import org.mozilla.geckoview.GeckoRuntimeSettings
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse
+import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.StorageController
+import org.mozilla.geckoview.WebExtension
+import org.mozilla.geckoview.WebRequestError
 import timber.log.Timber
 import java.util.*
 import java.util.concurrent.TimeUnit
 
-
+/**
+ * Dashboard browser backed by GeckoView (bundled Firefox engine) instead of the system WebView,
+ * so pages render with a current engine even on devices whose WebView can't be updated.
+ */
 class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
 
-    private val mWebView: WebView by lazy {
-        findViewById<View>(R.id.activity_browser_webview_native) as WebView
-    }
+    private val geckoView: GeckoView by lazy { findViewById(R.id.activity_browser_webview_native) }
+    private val swipeContainer: SwipeRefreshLayout by lazy { findViewById(R.id.swipeContainer) }
+    private val progressView: ProgressBar by lazy { findViewById(R.id.progressView) }
+    private val launchSettingsFab: FloatingActionButton by lazy { findViewById(R.id.launchSettingsFab) }
 
-    private var certPermissionsShown = false
+    private var session: GeckoSession? = null
+    private var bridgePort: WebExtension.Port? = null
+    private var pendingPermissionCallback: GeckoSession.PermissionDelegate.Callback? = null
+    private var currentUrl: String? = null
+    private var progressSnackbar: Snackbar? = null
+    private var contentScrollY = 0
+
     private var playlistHandler: Handler? = null
     private var codeBottomSheet: CodeBottomSheetFragment? = null
-    private var webSettings: WebSettings? = null
     private val calendar: Calendar = Calendar.getInstance()
-    private val reconnectionHandler = Handler()
+    private val reconnectionHandler = Handler(Looper.getMainLooper())
     private var connectionLiveData: ConnectionLiveData? = null
     private var isConnected = true
-    private var webkitPermissionRequest: PermissionRequest? = null
     private var awaitingReconnect = false
 
     // To save current index
@@ -80,7 +99,7 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
@@ -129,114 +148,22 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
             }
         })
 
-        mWebView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        val runtime = getRuntime(this, zoomLevel)
+        val newSession = GeckoSession(GeckoSessionSettings.Builder()
+                .usePrivateMode(false)
+                .useTrackingProtection(false)
+                .build())
+        newSession.progressDelegate = progressDelegate
+        newSession.navigationDelegate = navigationDelegate
+        newSession.permissionDelegate = permissionDelegate
+        newSession.promptDelegate = promptDelegate
+        newSession.scrollDelegate = scrollDelegate
+        newSession.contentDelegate = contentDelegate
+        newSession.open(runtime)
+        geckoView.setSession(newSession)
+        session = newSession
 
-        // Force links and redirects to open in the WebView instead of in a browser
-        mWebView.webChromeClient = object : WebChromeClient() {
-            var snackbar: Snackbar? = null
-            override fun onProgressChanged(view: WebView, newProgress: Int) {
-                if (newProgress == 100) {
-                    snackbar?.dismiss()
-                    if (view.url != null) {
-                        pageLoadComplete(view.url.toString())
-                    } else {
-                        Toast.makeText(this@BrowserActivityNative, getString(R.string.toast_empty_url), Toast.LENGTH_SHORT).show()
-                        complete()
-                    }
-                    return
-                }
-                if (displayProgress) {
-                    val text = getString(R.string.text_loading_percent, newProgress.toString(), view.url)
-                    if (snackbar == null) {
-                        snackbar = Snackbar.make(view, text, Snackbar.LENGTH_INDEFINITE)
-                    } else {
-                        snackbar?.setText(text)
-                    }
-                    snackbar?.show()
-                }
-            }
-
-            @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-            override fun onPermissionRequest(request: PermissionRequest?) {
-                super.onPermissionRequest(request)
-                webkitPermissionRequest = request
-                request?.resources?.forEach {
-                    when(it){
-                        PermissionRequest.RESOURCE_AUDIO_CAPTURE -> {
-                            askForWebkitPermission(it, REQUEST_CODE_PERMISSION_AUDIO)
-                        }
-                        PermissionRequest.RESOURCE_VIDEO_CAPTURE -> {
-                            askForWebkitPermission(it, REQUEST_CODE_PERMISSION_CAMERA)
-                        }
-                    }
-                }
-            }
-
-            override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
-                if (view.context != null && !isFinishing) {
-                    AlertDialog.Builder(this@BrowserActivityNative)
-                            .setMessage(message)
-                            .setPositiveButton(android.R.string.ok, null)
-                            .show()
-                }
-                return true
-            }
-
-
-        }
-
-        mWebView.webViewClient = object : WebViewClient() {
-            private var isRedirect = false
-            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                isRedirect = true
-                view.loadUrl(url)
-                return true
-            }
-
-            // TODO load a special file here on disconnect and then reload page on timer
-            override fun onReceivedError(view: WebView, errorCode: Int, description: String, failingUrl: String) {
-                if (!isFinishing) {
-                    view.loadUrl("about:blank")
-                    view.loadUrl("file:///android_asset/error_page.html")
-                    isConnected = false
-                    startReloadDelay()
-                }
-            }
-
-            override fun onReceivedSslError(view: WebView, handler: SslErrorHandler?, error: SslError?) {
-                if (!certPermissionsShown && !isFinishing && !configuration.ignoreSSLErrors) {
-                    var message = getString(R.string.dialog_message_ssl_generic)
-                    when (error?.primaryError) {
-                        SslError.SSL_UNTRUSTED -> message = getString(R.string.dialog_message_ssl_untrusted)
-                        SslError.SSL_EXPIRED -> message = getString(R.string.dialog_message_ssl_expired)
-                        SslError.SSL_IDMISMATCH -> message = getString(R.string.dialog_message_ssl_mismatch)
-                        SslError.SSL_NOTYETVALID -> message = getString(R.string.dialog_message_ssl_not_yet_valid)
-                    }
-                    message += getString(R.string.dialog_message_ssl_continue)
-                    dialogUtils.showAlertDialog(this@BrowserActivityNative,
-                            getString(R.string.dialog_title_ssl_error),
-                            getString(R.string.dialog_message_ssl_continue),
-                            getString(R.string.button_continue),
-                            { _, which -> handler?.proceed() },
-                            { _, which -> handler?.proceed() }
-                    )
-                } else {
-                    handler?.proceed()
-                }
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                if(isConnected) {
-                    stopReloadDelay()
-                }
-                if (isRedirect) {
-                    isRedirect = false
-                    return
-                }
-            }
-        }
-
-        mWebView.setOnTouchListener { v, event ->
+        geckoView.setOnTouchListener { v, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     resetScreen()
@@ -251,12 +178,22 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
             false
         }
 
-        initWebPageLoad()
+        // Load the page once the JS bridge is listening so the first page can receive eval commands
+        attachBridge(runtime, newSession) { initWebPageLoad() }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         codeBottomSheet?.dismiss()
+        reconnectionHandler.removeCallbacksAndMessages(null)
+        playlistHandler?.removeCallbacksAndMessages(null)
+        pendingPermissionCallback?.reject()
+        pendingPermissionCallback = null
+        session?.let {
+            geckoView.releaseSession()
+            it.close()
+        }
+        session = null
     }
 
     override fun onStart() {
@@ -267,21 +204,12 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
             setLightTheme()
         }
 
-        if (configuration.hardwareAccelerated && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            // chromium, enable hardware acceleration
-            mWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        } else {
-            // older android version, disable hardware acceleration
-            mWebView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-        }
-
         if (configuration.browserRefresh) {
             swipeContainer.setOnRefreshListener {
                 clearCache()
                 initWebPageLoad()
             }
-            mOnScrollChangedListener = ViewTreeObserver.OnScrollChangedListener { swipeContainer?.isEnabled = mWebView.scrollY == 0 }
-            swipeContainer.viewTreeObserver.addOnScrollChangedListener(mOnScrollChangedListener)
+            swipeContainer.isEnabled = contentScrollY == 0
         } else {
             swipeContainer.isEnabled = false
         }
@@ -293,15 +221,8 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
         }
     }
 
-    override fun onStop() {
-        super.onStop()
-        if (mOnScrollChangedListener != null && configuration.browserRefresh) {
-            swipeContainer.viewTreeObserver.removeOnScrollChangedListener(mOnScrollChangedListener)
-        }
-    }
-
     override fun complete() {
-        if (swipeContainer != null && swipeContainer.isRefreshing && configuration.browserRefresh) {
+        if (swipeContainer.isRefreshing && configuration.browserRefresh) {
             swipeContainer.isRefreshing = false
         }
     }
@@ -314,47 +235,18 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
         startActivity(intent)
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    // TODO handle deprecated web settings
     override fun configureWebSettings(userAgent: String) {
-        if(webSettings == null) {
-            webSettings = mWebView.settings
-        }
-        webSettings?.javaScriptEnabled = true
-        webSettings?.domStorageEnabled = true
-        webSettings?.databaseEnabled = true
-        webSettings?.saveFormData = true
-        webSettings?.javaScriptCanOpenWindowsAutomatically = true
-        webSettings?.setAppCacheEnabled(true)
-        webSettings?.allowFileAccess = true
-        webSettings?.allowFileAccessFromFileURLs = true
-        webSettings?.allowContentAccess = true
-        webSettings?.setSupportZoom(true)
-        webSettings?.loadWithOverviewMode = true
-        webSettings?.useWideViewPort = true
-        webSettings?.pluginState = WebSettings.PluginState.ON
-        webSettings?.setRenderPriority(WebSettings.RenderPriority.HIGH);
-       // webSettings?.cacheMode = WebSettings.LOAD_NO_CACHE;
-
-        if (userAgent.isNotEmpty()) {
-            webSettings?.userAgentString = userAgent
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            webSettings?.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        }
+        session?.settings?.userAgentOverride = userAgent.ifEmpty { null }
     }
 
     private fun initWebPageLoad() {
+        if (session == null) {
+            return
+        }
         progressView.visibility = View.GONE
-        mWebView.visibility = View.VISIBLE
+        geckoView.visibility = View.VISIBLE
         // set user agent
         configureWebSettings(configuration.browserUserAgent)
-        // set zoom level
-        if (zoomLevel != 0.0f) {
-            val zoomPercent = (zoomLevel * 100).toInt()
-            mWebView.setInitialScale(zoomPercent)
-        }
         // check if we are using playlist
         if (configuration.appLaunchUrl.lines().size == 1) {
             loadWebViewUrl(configuration.appLaunchUrl)
@@ -365,24 +257,39 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
 
     override fun loadWebViewUrl(url: String) {
         Timber.d("loadUrl $url")
-        mWebView.loadUrl(url)
+        session?.loadUri(url)
     }
 
     override fun evaluateJavascript(js: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            mWebView.evaluateJavascript(js, null)
+        val port = bridgePort
+        if (port == null) {
+            Timber.w("JS bridge not connected, dropping eval")
+            return
         }
+        port.postMessage(JSONObject().put("js", js))
     }
 
     override fun clearCache() {
-        mWebView.clearCache(true)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            CookieManager.getInstance().removeAllCookies(null)
-        }
+        getRuntime(this, zoomLevel).storageController.clearData(
+                StorageController.ClearFlags.ALL_CACHES or StorageController.ClearFlags.COOKIES)
     }
 
     override fun reload() {
-        mWebView.reload()
+        session?.reload()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_CODE_GECKO_PERMISSIONS) {
+            return
+        }
+        val callback = pendingPermissionCallback ?: return
+        pendingPermissionCallback = null
+        if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            callback.grant()
+        } else {
+            callback.reject()
+        }
     }
 
     private val reloadPageRunnable = Runnable {
@@ -392,6 +299,7 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
     private fun startReloadDelay() {
         awaitingReconnect = true
         playlistHandler?.removeCallbacksAndMessages(null)
+        reconnectionHandler.removeCallbacks(reloadPageRunnable)
         reconnectionHandler.postDelayed(reloadPageRunnable, 30000)
     }
 
@@ -401,25 +309,187 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
     }
 
     private fun startPlaylist() {
-        playlistHandler = Handler()
+        playlistHandler = Handler(Looper.getMainLooper())
         playlistHandler?.postDelayed(playlistRunnable, 10)
     }
 
-    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-    fun askForWebkitPermission(permission: String, requestCode: Int) {
-        if (ContextCompat.checkSelfPermission(applicationContext, permission) != PackageManager.PERMISSION_GRANTED) {
-            // Should we show an explanation?
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this, permission)) {
-                // Show an expanation to the user *asynchronously* -- don't block
-                // this thread waiting for the user's response! After the user
-                // sees the explanation, try again to request the permission.
-            } else {
-                // No explanation needed, we can request the permission.
-                ActivityCompat.requestPermissions(this, arrayOf(permission), requestCode)
-            }
-        } else {
-            webkitPermissionRequest?.grant(webkitPermissionRequest?.resources)
+    /**
+     * Installs the bundled extension (assets/wallpanel-bridge) that runs eval commands in the page,
+     * then calls [onReady] whether or not the install worked.
+     */
+    private fun attachBridge(runtime: GeckoRuntime, session: GeckoSession, onReady: () -> Unit) {
+        runtime.webExtensionController
+                .ensureBuiltIn(BRIDGE_EXTENSION_URI, BRIDGE_EXTENSION_ID)
+                .accept({ extension ->
+                    extension?.let {
+                        session.webExtensionController.setMessageDelegate(it, bridgeDelegate, BRIDGE_NATIVE_APP)
+                    }
+                    onReady()
+                }, { e ->
+                    Timber.e(e, "Could not install WallPanel bridge extension")
+                    onReady()
+                })
+    }
+
+    private val bridgeDelegate = object : WebExtension.MessageDelegate {
+        override fun onConnect(port: WebExtension.Port) {
+            // A new port is opened for each page load; keep the latest one
+            bridgePort = port
+            port.setDelegate(object : WebExtension.PortDelegate {
+                override fun onDisconnect(port: WebExtension.Port) {
+                    if (bridgePort == port) {
+                        bridgePort = null
+                    }
+                }
+            })
         }
+    }
+
+    private val progressDelegate = object : GeckoSession.ProgressDelegate {
+        override fun onProgressChange(session: GeckoSession, progress: Int) {
+            if (progress >= 100 || !displayProgress) {
+                return
+            }
+            val text = getString(R.string.text_loading_percent, progress.toString(), currentUrl)
+            val snackbar = progressSnackbar
+                    ?: Snackbar.make(geckoView, text, Snackbar.LENGTH_INDEFINITE).also { progressSnackbar = it }
+            snackbar.setText(text)
+            snackbar.show()
+        }
+
+        override fun onPageStop(session: GeckoSession, success: Boolean) {
+            progressSnackbar?.dismiss()
+            progressSnackbar = null
+            if (isConnected) {
+                stopReloadDelay()
+            }
+            val url = currentUrl
+            if (url != null) {
+                pageLoadComplete(url)
+            } else {
+                Toast.makeText(this@BrowserActivityNative, getString(R.string.toast_empty_url), Toast.LENGTH_SHORT).show()
+                complete()
+            }
+        }
+    }
+
+    private val navigationDelegate = object : GeckoSession.NavigationDelegate {
+        override fun onLocationChange(session: GeckoSession, url: String?,
+                                      perms: List<ContentPermission>, hasUserGesture: Boolean) {
+            currentUrl = url
+        }
+
+        override fun onLoadRequest(session: GeckoSession,
+                                   request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? {
+            if (request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) {
+                // Keep new-window links in the single kiosk view, as the WebView version did
+                session.loadUri(request.uri)
+                return GeckoResult.fromValue(AllowOrDeny.DENY)
+            }
+            return null
+        }
+
+        override fun onLoadError(session: GeckoSession, uri: String?, error: WebRequestError): GeckoResult<String>? {
+            Timber.e("Load error category=${error.category} code=${error.code} uri=$uri")
+            if (isFinishing) {
+                return null
+            }
+            isConnected = false
+            startReloadDelay()
+            return GeckoResult.fromValue(ERROR_PAGE_URI)
+        }
+    }
+
+    private val permissionDelegate = object : GeckoSession.PermissionDelegate {
+        override fun onAndroidPermissionsRequest(session: GeckoSession, permissions: Array<out String>?,
+                                                 callback: GeckoSession.PermissionDelegate.Callback) {
+            val missing = permissions.orEmpty().filter {
+                ContextCompat.checkSelfPermission(this@BrowserActivityNative, it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (missing.isEmpty()) {
+                callback.grant()
+                return
+            }
+            pendingPermissionCallback?.reject()
+            pendingPermissionCallback = callback
+            ActivityCompat.requestPermissions(this@BrowserActivityNative, missing.toTypedArray(), REQUEST_CODE_GECKO_PERMISSIONS)
+        }
+
+        // Kiosk showing the user's own dashboard: allow autoplay, storage, etc. without prompting
+        override fun onContentPermissionRequest(session: GeckoSession, perm: ContentPermission): GeckoResult<Int> {
+            return GeckoResult.fromValue(ContentPermission.VALUE_ALLOW)
+        }
+
+        override fun onMediaPermissionRequest(session: GeckoSession, uri: String,
+                                              video: Array<out GeckoSession.PermissionDelegate.MediaSource>?,
+                                              audio: Array<out GeckoSession.PermissionDelegate.MediaSource>?,
+                                              callback: GeckoSession.PermissionDelegate.MediaCallback) {
+            callback.grant(video?.firstOrNull()?.id, audio?.firstOrNull()?.id)
+        }
+    }
+
+    private val promptDelegate = object : GeckoSession.PromptDelegate {
+        override fun onAlertPrompt(session: GeckoSession,
+                                   prompt: GeckoSession.PromptDelegate.AlertPrompt): GeckoResult<PromptResponse> {
+            if (!isFinishing) {
+                AlertDialog.Builder(this@BrowserActivityNative)
+                        .setMessage(prompt.message)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+            }
+            return GeckoResult.fromValue(prompt.dismiss())
+        }
+
+        override fun onButtonPrompt(session: GeckoSession,
+                                    prompt: GeckoSession.PromptDelegate.ButtonPrompt): GeckoResult<PromptResponse> {
+            val result = GeckoResult<PromptResponse>()
+            if (isFinishing) {
+                result.complete(prompt.dismiss())
+                return result
+            }
+            AlertDialog.Builder(this@BrowserActivityNative)
+                    .setMessage(prompt.message)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        result.complete(prompt.confirm(GeckoSession.PromptDelegate.ButtonPrompt.Type.POSITIVE))
+                    }
+                    .setNegativeButton(android.R.string.cancel) { _, _ ->
+                        result.complete(prompt.confirm(GeckoSession.PromptDelegate.ButtonPrompt.Type.NEGATIVE))
+                    }
+                    .setOnCancelListener { result.complete(prompt.dismiss()) }
+                    .show()
+            return result
+        }
+    }
+
+    private val scrollDelegate = object : GeckoSession.ScrollDelegate {
+        override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+            contentScrollY = scrollY
+            if (configuration.browserRefresh) {
+                swipeContainer.isEnabled = scrollY == 0
+            }
+        }
+    }
+
+    private val contentDelegate = object : GeckoSession.ContentDelegate {
+        override fun onCrash(session: GeckoSession) {
+            Timber.e("GeckoView content process crashed, reopening session")
+            reopenSession(session)
+        }
+
+        override fun onKill(session: GeckoSession) {
+            Timber.e("GeckoView content process was killed, reopening session")
+            reopenSession(session)
+        }
+    }
+
+    private fun reopenSession(crashed: GeckoSession) {
+        if (isFinishing || crashed != session) {
+            return
+        }
+        if (!crashed.isOpen) {
+            crashed.open(getRuntime(this, zoomLevel))
+        }
+        initWebPageLoad()
     }
 
     private fun showCodeBottomSheet() {
@@ -470,20 +540,37 @@ class BrowserActivityNative : BaseBrowserActivity(), LifecycleObserver {
             configuration.settingsTransparent -> {
                 launchSettingsFab.visibility = View.VISIBLE
                 launchSettingsFab.backgroundTintList = ContextCompat.getColorStateList(this, R.color.transparent)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    launchSettingsFab.compatElevation = 0f
-                }
+                launchSettingsFab.compatElevation = 0f
                 launchSettingsFab.imageAlpha = 0
             }
             else -> {
                 launchSettingsFab.visibility = View.VISIBLE
                 launchSettingsFab.backgroundTintList = ContextCompat.getColorStateList(this, R.color.colorAccent)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    launchSettingsFab.compatElevation = 4f
-                }
+                launchSettingsFab.compatElevation = 4f
                 launchSettingsFab.imageAlpha = 180
             }
         }
     }
 
+    companion object {
+        private const val REQUEST_CODE_GECKO_PERMISSIONS = 14
+        private const val ERROR_PAGE_URI = "resource://android/assets/error_page.html"
+        private const val BRIDGE_EXTENSION_URI = "resource://android/assets/wallpanel-bridge/"
+        private const val BRIDGE_EXTENSION_ID = "bridge@wallpanel.thanksmister.com"
+        private const val BRIDGE_NATIVE_APP = "wallpanel"
+
+        // Gecko allows only one runtime per process, so it outlives the activity
+        private var runtime: GeckoRuntime? = null
+
+        private fun getRuntime(activity: BrowserActivityNative, zoomLevel: Float): GeckoRuntime {
+            runtime?.let { return it }
+            val settings = GeckoRuntimeSettings.Builder()
+                    .consoleOutput(BuildConfig.DEBUG)
+            // WebView's initial-scale zoom maps to a display density override; applied at runtime start
+            if (zoomLevel > 0f && zoomLevel != 1.0f) {
+                settings.displayDensityOverride(activity.resources.displayMetrics.density * zoomLevel)
+            }
+            return GeckoRuntime.create(activity.applicationContext, settings.build()).also { runtime = it }
+        }
+    }
 }

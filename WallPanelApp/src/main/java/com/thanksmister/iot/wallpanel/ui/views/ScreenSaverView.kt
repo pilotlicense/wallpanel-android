@@ -40,10 +40,17 @@ import com.squareup.picasso.NetworkPolicy
 import com.squareup.picasso.Picasso
 import com.thanksmister.iot.wallpanel.R
 import com.thanksmister.iot.wallpanel.persistence.Configuration.Companion.WEB_SCREEN_SAVER
-import kotlinx.android.synthetic.main.dialog_screen_saver.view.*
 import timber.log.Timber
 import java.util.*
 import java.util.concurrent.TimeUnit
+
+private val ScreenSaverView.screenSaverClock: android.widget.TextView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.screenSaverClock)
+private val ScreenSaverView.screenSaverClockLayout: android.widget.LinearLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.screenSaverClockLayout)
+private val ScreenSaverView.screenSaverDay: android.widget.TextView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.screenSaverDay)
+private val ScreenSaverView.screenSaverImageLayout: android.widget.ImageView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.screenSaverImageLayout)
+private val ScreenSaverView.screenSaverView: ScreenSaverView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.screenSaverView)
+private val ScreenSaverView.screenSaverWebView: android.webkit.WebView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.screenSaverWebView)
+private val ScreenSaverView.screenSaverWebViewLayout: android.widget.RelativeLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.screenSaverWebViewLayout)
 
 class ScreenSaverView : RelativeLayout {
 
@@ -243,7 +250,6 @@ class ScreenSaverView : RelativeLayout {
         webSettings?.javaScriptEnabled = true
         webSettings?.domStorageEnabled = true
         webSettings?.databaseEnabled = true
-        webSettings?.setAppCacheEnabled(true)
         webSettings?.javaScriptCanOpenWindowsAutomatically = true
         if (!TextUtils.isEmpty(userAgent)) {
             webSettings?.userAgentString = userAgent

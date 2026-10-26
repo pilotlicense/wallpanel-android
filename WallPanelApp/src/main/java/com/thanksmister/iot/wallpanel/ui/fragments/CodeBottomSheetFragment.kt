@@ -29,8 +29,23 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.thanksmister.iot.wallpanel.R
-import kotlinx.android.synthetic.main.fragment_code_bottom_sheet.*
-import kotlinx.android.synthetic.main.view_keypad.*
+
+private val CodeBottomSheetFragment.closeCodeButton: android.widget.ImageView get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.closeCodeButton)
+private val CodeBottomSheetFragment.pinCode1: android.widget.ImageView get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.pinCode1)
+private val CodeBottomSheetFragment.pinCode2: android.widget.ImageView get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.pinCode2)
+private val CodeBottomSheetFragment.pinCode3: android.widget.ImageView get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.pinCode3)
+private val CodeBottomSheetFragment.pinCode4: android.widget.ImageView get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.pinCode4)
+private val CodeBottomSheetFragment.button0: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button0)
+private val CodeBottomSheetFragment.button1: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button1)
+private val CodeBottomSheetFragment.button2: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button2)
+private val CodeBottomSheetFragment.button3: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button3)
+private val CodeBottomSheetFragment.button4: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button4)
+private val CodeBottomSheetFragment.button5: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button5)
+private val CodeBottomSheetFragment.button6: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button6)
+private val CodeBottomSheetFragment.button7: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button7)
+private val CodeBottomSheetFragment.button8: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button8)
+private val CodeBottomSheetFragment.button9: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.button9)
+private val CodeBottomSheetFragment.buttonDel: android.widget.FrameLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.buttonDel)
 
 class CodeBottomSheetFragment (private val alarmListener: OnAlarmCodeFragmentListener) : BottomSheetDialogFragment() {
 

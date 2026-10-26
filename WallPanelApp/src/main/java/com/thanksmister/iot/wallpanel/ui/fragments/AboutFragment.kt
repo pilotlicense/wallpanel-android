@@ -29,8 +29,13 @@ import androidx.navigation.Navigation
 import com.thanksmister.iot.wallpanel.R
 import com.thanksmister.iot.wallpanel.ui.activities.SettingsActivity
 
-import kotlinx.android.synthetic.main.fragment_about.*
 import timber.log.Timber
+
+private val AboutFragment.githubButton: android.widget.LinearLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.githubButton)
+private val AboutFragment.rateApplicationButton: android.widget.LinearLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.rateApplicationButton)
+private val AboutFragment.sendFeedbackButton: android.widget.LinearLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.sendFeedbackButton)
+private val AboutFragment.supportButton: android.widget.LinearLayout get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.supportButton)
+private val AboutFragment.versionName: android.widget.TextView get() = requireView().findViewById(com.thanksmister.iot.wallpanel.R.id.versionName)
 
 class AboutFragment : Fragment() {
 

@@ -20,7 +20,8 @@ import android.content.Context
 import android.text.TextUtils
 import android.util.AttributeSet
 import com.thanksmister.iot.wallpanel.R
-import kotlinx.android.synthetic.main.dialog_code_set.view.*
+
+private val SettingsCodeView.codeTitle: android.widget.TextView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.codeTitle)
 
 class SettingsCodeView : BaseView {
 

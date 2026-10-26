@@ -18,10 +18,7 @@ package com.thanksmister.iot.wallpanel
 
 import android.content.Context
 import androidx.multidex.MultiDex
-import com.google.firebase.FirebaseApp
-import com.google.firebase.analytics.FirebaseAnalytics
 import com.thanksmister.iot.wallpanel.di.DaggerApplicationComponent
-import com.thanksmister.iot.wallpanel.utils.CrashlyticsTree
 import com.thanksmister.iot.wallpanel.utils.LauncherShortcuts
 import dagger.android.AndroidInjector
 import dagger.android.support.DaggerApplication

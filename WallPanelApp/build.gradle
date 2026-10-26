@@ -17,9 +17,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-kapt'
-apply plugin: 'kotlin-android-extensions'
-apply plugin: 'com.google.gms.google-services'
-apply plugin: 'com.google.firebase.crashlytics'
 
 
 def versionMajor = 0
@@ -58,20 +55,28 @@ def BROKER_USERNAME() {
 }
 
 android {
+    namespace "com.thanksmister.iot.wallpanel"
     kapt {
-        generateStubs = true
         correctErrorTypes = true
     }
-    compileSdkVersion 30
-    buildToolsVersion "30.0.1"
+    compileSdk 36
+    lint {
+        // Play Store target-SDK rule; this build is sideloaded, not published
+        disable 'ExpiredTargetSdkVersion'
+    }
+    buildFeatures {
+        buildConfig true
+    }
     defaultConfig {
         applicationId "com.thanksmister.iot.wallpanel"
-        minSdkVersion 19
+        // GeckoView requires Android 8.0+
+        minSdkVersion 26
         targetSdkVersion 30
         versionCode versionMajor * 10000 + versionMinor * 1000 + versionPatch * 100 + versionBuild
         versionName "${versionMajor}.${versionMinor}.${versionPatch}.${versionBuild}"
         multiDexEnabled true
-        ndk.abiFilters 'armeabi-v7a','arm64-v8a','x86','x86_64'
+        // GeckoView is pulled in for arm64 only
+        ndk.abiFilters 'arm64-v8a'
         vectorDrawables.useSupportLibrary = true
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -79,6 +84,8 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Local sideload build: reuse the debug key so it updates the installed app in place
+            signingConfig signingConfigs.debug
         }
     }
 
@@ -106,8 +113,9 @@ android {
         prod {
             dimension "default"
             buildConfigField "String", BASE_ENVIRONMENT, '"PROD_ENVIRONMENT"'
-            applicationId "com.thanksmister.iot.wallpanel"
-            versionName "${versionMajor}.${versionMinor}.${versionPatch} Build ${versionBuild}"
+            // Separate id so this GeckoView build installs alongside the stock app
+            applicationId "com.thanksmister.iot.wallpanel.gecko"
+            versionName "${versionMajor}.${versionMinor}.${versionPatch} Build ${versionBuild}-Gecko"
             buildConfigField 'Integer', 'CODE', '1234'
             buildConfigField 'String', 'HASS_URL', '""'
             buildConfigField 'String', 'BROKER', '""'
@@ -117,15 +125,21 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
     }
 }
 
 dependencies {
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$versions.kotlin"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$versions.kotlin"
+
+    // GeckoView (Firefox ESR engine) replaces the system WebView for the dashboard
+    implementation "org.mozilla.geckoview:geckoview-arm64-v8a:$versions.geckoview"
 
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'androidx.appcompat:appcompat:1.2.0'
@@ -147,8 +161,7 @@ dependencies {
     implementation 'io.reactivex.rxjava2:rxandroid:2.0.1'
 
     // LiveData + ViewModel
-    implementation "androidx.lifecycle:lifecycle-extensions:$versions.lifecycle"
-    implementation 'com.google.firebase:firebase-analytics:17.2.2'
+    implementation "androidx.lifecycle:lifecycle-extensions:2.2.0"
     annotationProcessor "androidx.lifecycle:lifecycle-compiler:$versions.lifecycle"
     implementation "androidx.lifecycle:lifecycle-reactivestreams:$versions.lifecycle"
     implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:$versions.lifecycle"
@@ -179,17 +192,6 @@ dependencies {
 
     // Logging
     implementation 'com.jakewharton.timber:timber:4.5.1'
-
-    // Import the BoM for the Firebase platform
-    implementation platform('com.google.firebase:firebase-bom:28.4.0')
-
-    // Declare the dependencies for the Crashlytics and Analytics libraries
-    // When using the BoM, you don't specify versions in Firebase library dependencies
-    implementation 'com.google.firebase:firebase-analytics-ktx'
-    implementation 'com.google.firebase:firebase-crashlytics-ktx'
-
-    // Firebase
-    implementation 'com.google.firebase:firebase-core:19.0.1'
 
     // Picasso image loading
     implementation 'com.squareup.picasso:picasso:2.71828'

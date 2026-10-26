@@ -21,8 +21,22 @@ import android.media.AudioManager
 import android.util.AttributeSet
 import android.widget.LinearLayout
 import com.thanksmister.iot.wallpanel.R
-import kotlinx.android.synthetic.main.dialog_code_set.view.*
-import kotlinx.android.synthetic.main.view_keypad.view.*
+
+private val BaseView.pinCode1: android.widget.ImageView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.pinCode1)
+private val BaseView.pinCode2: android.widget.ImageView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.pinCode2)
+private val BaseView.pinCode3: android.widget.ImageView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.pinCode3)
+private val BaseView.pinCode4: android.widget.ImageView get() = findViewById(com.thanksmister.iot.wallpanel.R.id.pinCode4)
+private val BaseView.button0: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button0)
+private val BaseView.button1: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button1)
+private val BaseView.button2: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button2)
+private val BaseView.button3: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button3)
+private val BaseView.button4: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button4)
+private val BaseView.button5: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button5)
+private val BaseView.button6: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button6)
+private val BaseView.button7: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button7)
+private val BaseView.button8: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button8)
+private val BaseView.button9: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.button9)
+private val BaseView.buttonDel: android.widget.FrameLayout get() = findViewById(com.thanksmister.iot.wallpanel.R.id.buttonDel)
 
 abstract class BaseView : LinearLayout {
 
